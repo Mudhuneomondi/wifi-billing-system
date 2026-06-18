@@ -1,0 +1,163 @@
+#####################################
+### PACKAGES
+#####################################
+
+### Get all packages
+GET http://localhost:5000/api/packages
+
+
+### Get package by ID
+GET http://localhost:5000/api/packages/1
+
+
+### Create package
+POST http://localhost:5000/api/packages
+Content-Type: application/json
+
+{
+    "package_name": "1 Hour",
+    "duration_hours": 1,
+    "price": 20
+}
+
+
+### Update package
+PUT http://localhost:5000/api/packages/1
+Content-Type: application/json
+
+{
+    "package_name": "Updated 1 Hour",
+    "duration_hours": 1,
+    "price": 25
+}
+
+
+### Delete package
+DELETE http://localhost:5000/api/packages/1
+
+
+#####################################
+### USER AUTHENTICATION
+#####################################
+
+### Register User
+POST http://localhost:5000/api/users/register
+Content-Type: application/json
+
+{
+    "username": "testuser",
+    "password": "1234",
+    "package_id": 1
+}
+
+
+### Login User (Copy Token From Response)
+POST http://localhost:5000/api/users/login
+Content-Type: application/json
+
+{
+    "username": "testuser",
+    "password": "1234"
+}
+
+
+#####################################
+### USER ROUTES (PROTECTED)
+#####################################
+
+### Get all users
+GET http://localhost:5000/api/users
+Authorization: Bearer PASTE_TOKEN_HERE
+
+
+### Get user by ID
+GET http://localhost:5000/api/users/1
+Authorization: Bearer PASTE_TOKEN_HERE
+
+
+### Delete user
+DELETE http://localhost:5000/api/users/1
+Authorization: Bearer PASTE_TOKEN_HERE
+
+
+#####################################
+### SESSION ROUTES
+#####################################
+
+### Get active sessions
+GET http://localhost:5000/api/sessions/active
+Authorization: Bearer PASTE_TOKEN_HERE
+
+
+### Disconnect session
+POST http://localhost:5000/api/sessions/disconnect/1
+Authorization: Bearer PASTE_TOKEN_HERE
+
+
+#####################################
+### ADMIN DASHBOARD
+#####################################
+
+### Get system statistics
+GET http://localhost:5000/api/admin/stats
+Authorization: Bearer PASTE_TOKEN_HERE
+
+#####################################
+### RENEW PACKAGE
+#####################################
+
+POST http://localhost:5000/api/users/renew/6
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NiwidXNlcm5hbWUiOiJ0ZXN0dXNlciIsInN0YXR1cyI6IkVYUElSRUQiLCJpYXQiOjE3ODE3NzIyNDksImV4cCI6MTc4MTg1ODY0OX0.T15NXSbwr93dpNnM2u5R2BquVd_jYIhAhm9Ai4uPpY8
+Content-Type: application/json
+
+{
+    "package_id": 1,
+    "payment_method": "MPESA"
+}
+
+#####################################
+### PAYMENTS
+#####################################
+
+### Get all payments
+GET http://localhost:5000/api/payments
+Authorization: Bearer PASTE_TOKEN_HERE
+#####################################
+### REVENUE ANALYTICS
+#####################################
+
+### Total revenue
+GET http://localhost:5000/api/revenue/total
+Authorization: Bearer PASTE_TOKEN_HERE
+
+
+### Today revenue
+GET http://localhost:5000/api/revenue/today
+Authorization: Bearer PASTE_TOKEN_HERE
+
+
+### Monthly revenue
+GET http://localhost:5000/api/revenue/month
+Authorization: Bearer PASTE_TOKEN_HERE
+
+
+### Top packages
+GET http://localhost:5000/api/revenue/top-packages
+Authorization: Bearer PASTE_TOKEN_HERE
+#####################################
+### CAPTIVE PORTAL
+#####################################
+
+POST http://localhost:5000/api/captive/login
+Content-Type: application/json
+
+{
+    "username": "testuser",
+    "password": "1234"
+}
+#####################################
+### ADMIN DASHBOARD
+#####################################
+
+GET http://localhost:5000/api/admin/dashboard
+Authorization: Bearer YOUR_TOKEN_HERE
