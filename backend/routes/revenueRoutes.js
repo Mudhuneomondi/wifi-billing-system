@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-
+console.log("REV CTRL:", require('../controllers/revenueController'));
 const {
     getTotalRevenue,
     getTodayRevenue,
