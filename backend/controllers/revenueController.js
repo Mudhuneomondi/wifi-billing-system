@@ -1,53 +1,96 @@
-const express = require('express');
-require('dotenv').config();
-
-// Routes
-const packageRoutes = require('./routes/packageRoutes');
-const userRoutes = require('./routes/userRoutes');
-const sessionRoutes = require('./routes/sessionRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
-
-// Services
-const { expireSessions } = require('./services/sessionService');
-
-const app = express();
-
-app.use(express.json());
+const supabase = require('../config/supabase');
 
 
 // ==========================
-// HOME ROUTE
+// TOTAL REVENUE
 // ==========================
-app.get('/', (req, res) => {
-    res.send('WiFi Billing System API Running');
-});
+const getTotalRevenue = async (req, res) => {
+
+    try {
+
+        const { data, error } = await supabase
+            .from('payments')
+            .select('amount')
+            .eq('status', 'PAID');
+
+        if (error) {
+            return res.status(500).json(error);
+        }
+
+        const totalRevenue = data.reduce(
+            (sum, payment) => sum + Number(payment.amount),
+            0
+        );
+
+        res.json({
+            totalRevenue
+        });
+
+    } catch (err) {
+
+        res.status(500).json({
+            message: 'Server error',
+            error: err.message
+        });
+
+    }
+};
 
 
 // ==========================
-// API ROUTES
+// REVENUE BY PACKAGE
 // ==========================
-app.use('/api/packages', packageRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/sessions', sessionRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/payments', paymentRoutes);
+const getRevenueByPackage = async (req, res) => {
+
+    try {
+
+        const { data, error } = await supabase
+            .from('payments')
+            .select(`
+                amount,
+                package_id,
+                packages (
+                    package_name
+                )
+            `)
+            .eq('status', 'PAID');
+
+        if (error) {
+            return res.status(500).json(error);
+        }
+
+        const revenueMap = {};
+
+        data.forEach(payment => {
+
+            const packageName =
+                payment.packages?.package_name || 'Unknown';
+
+            if (!revenueMap[packageName]) {
+                revenueMap[packageName] = 0;
+            }
+
+            revenueMap[packageName] += Number(payment.amount);
+
+        });
+
+        res.json(revenueMap);
+
+    } catch (err) {
+
+        res.status(500).json({
+            message: 'Server error',
+            error: err.message
+        });
+
+    }
+};
 
 
 // ==========================
-// SESSION EXPIRY ENGINE
+// EXPORTS
 // ==========================
-setInterval(() => {
-    expireSessions();
-}, 60000); // every 60 seconds
-
-
-// ==========================
-// START SERVER
-// ==========================
-const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log('Session expiry engine running...');
-});
+module.exports = {
+    getTotalRevenue,
+    getRevenueByPackage
+};
