@@ -1,6 +1,6 @@
-const { RouterOSClient } = require('node-routeros');
+const { RouterOSAPI } = require('node-routeros');
 
-const client = new RouterOSClient({
+const client = new RouterOSAPI({
     host: process.env.MIKROTIK_HOST,
     user: process.env.MIKROTIK_USER,
     password: process.env.MIKROTIK_PASSWORD,
