@@ -1,8 +1,7 @@
 // backend/config/mikrotik.js
 const { RouterOSAPI } = require('node-routeros');
-require('dotenv').config();
 
-const client = new RouterOSAPI({
+const api = new RouterOSAPI({
   host: process.env.MIKROTIK_HOST,
   user: process.env.MIKROTIK_USER,
   password: process.env.MIKROTIK_PASSWORD,
@@ -10,11 +9,22 @@ const client = new RouterOSAPI({
   timeout: 10,
 });
 
-async function getClient() {
-  if (!client.connected) {
-    await client.connect();
+let connecting = null;
+async function ensureConnected() {
+  if (api.connected) return;
+  if (!connecting) {
+    connecting = api.connect()
+      .then(() => { connecting = null; })
+      .catch((err) => { connecting = null; throw err; });
   }
-  return client;
+  return connecting;
 }
 
-module.exports = { client, getClient };
+// Same interface your service already uses (client.write), but auto-connects.
+module.exports = {
+  write: async (path, params = []) => {
+    await ensureConnected();
+    return api.write(path, params);
+  },
+  raw: api,
+};

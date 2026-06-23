@@ -1,6 +1,7 @@
 const supabase = require('../config/supabase');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const mikrotik = require('../services/mikrotikService');
 
 
 // ================================
@@ -60,6 +61,17 @@ const createUser = async (req, res) => {
 
         if (error) {
             return res.status(500).json(error);
+        }
+
+        // Provision matching hotspot user on the router.
+        // We use the plaintext password here (we only have it at registration),
+        // so the customer logs into the captive portal with the same credentials.
+        // Wrapped in try/catch so registration still succeeds if the router is
+        // unreachable (e.g. backend on Render can't reach a router behind NAT).
+        try {
+            await mikrotik.addHotspotUser(username, password, 'default');
+        } catch (mtError) {
+            console.error('MikroTik addHotspotUser failed:', mtError.message);
         }
 
         res.status(201).json(data);
@@ -129,7 +141,7 @@ const loginUser = async (req, res) => {
                 username: user.username,
                 status: user.status
             },
-            'SECRET_KEY',
+            process.env.JWT_SECRET || 'SECRET_KEY',
             { expiresIn: '1d' }
         );
 
@@ -227,6 +239,13 @@ const deleteUser = async (req, res) => {
 
     const { id } = req.params;
 
+    // Fetch the user first so we know which hotspot user to remove
+    const { data: user } = await supabase
+        .from('users')
+        .select('username')
+        .eq('id', id)
+        .maybeSingle();
+
     const { data, error } = await supabase
         .from('users')
         .delete()
@@ -236,6 +255,17 @@ const deleteUser = async (req, res) => {
 
     if (error) {
         return res.status(500).json(error);
+    }
+
+    // Disable + disconnect the matching hotspot user on the router
+    // (non-fatal if the router is unreachable).
+    if (user && user.username) {
+        try {
+            await mikrotik.disableUser(user.username);
+            await mikrotik.disconnectHotspotUser(user.username);
+        } catch (mtError) {
+            console.error('MikroTik cleanup on delete failed:', mtError.message);
+        }
     }
 
     res.json({
@@ -316,6 +346,16 @@ const renewPackage = async (req, res) => {
                 payment_method,
                 status: 'PAID'
             }]);
+
+        // Payment confirmed -> reactivate hotspot access on the router.
+        // The hotspot user was created at registration (we don't have the
+        // plaintext password here, only the stored hash), so we re-enable it.
+        // Non-fatal if the router is unreachable.
+        try {
+            await mikrotik.enableUser(user.username);
+        } catch (mtError) {
+            console.error('MikroTik enableUser failed:', mtError.message);
+        }
 
         res.json({
             message: 'Package renewed successfully',
