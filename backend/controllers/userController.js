@@ -5,6 +5,16 @@ const mikrotik = require('../services/mikrotikService');
 
 
 // ================================
+// HELPER: generate a 6-digit hotspot PIN (voucher)
+// The customer types username + this PIN at the WiFi login page.
+// Uniqueness across users isn't required because the username disambiguates.
+// ================================
+function generatePin() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+
+// ================================
 // REGISTER USER
 // ================================
 const createUser = async (req, res) => {
@@ -39,8 +49,11 @@ const createUser = async (req, res) => {
             });
         }
 
-        // Hash password
+        // Hash account password
         const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Generate the hotspot PIN (voucher) the customer uses at the portal
+        const hotspotPin = generatePin();
 
         // Calculate expiry
         const expiryTime = new Date();
@@ -52,6 +65,7 @@ const createUser = async (req, res) => {
             .insert([{
                 username,
                 password: hashedPassword,
+                hotspot_pin: hotspotPin,
                 package_id,
                 expiry_time: expiryTime,
                 status: 'ACTIVE'
@@ -63,18 +77,22 @@ const createUser = async (req, res) => {
             return res.status(500).json(error);
         }
 
-        // Provision matching hotspot user on the router.
-        // We use the plaintext password here (we only have it at registration),
-        // so the customer logs into the captive portal with the same credentials.
-        // Wrapped in try/catch so registration still succeeds if the router is
-        // unreachable (e.g. backend on Render can't reach a router behind NAT).
+        // LAB CONVENIENCE: push the hotspot user to the router immediately so you
+        // can test instantly. In PRODUCTION the router polls the /sync endpoint
+        // (Option C) and creates this user itself, so this push is optional and
+        // harmless if the router is unreachable (e.g. backend on Render).
+        // The hotspot PASSWORD is the PIN (voucher), not the account password.
         try {
-            await mikrotik.addHotspotUser(username, password, 'default');
+            await mikrotik.addHotspotUser(username, hotspotPin, 'default');
         } catch (mtError) {
             console.error('MikroTik addHotspotUser failed:', mtError.message);
         }
 
-        res.status(201).json(data);
+        // Return the user including the PIN so it can be shown to the customer
+        res.status(201).json({
+            ...data,
+            hotspot_pin: hotspotPin
+        });
 
     } catch (err) {
         res.status(500).json({
@@ -160,6 +178,7 @@ const loginUser = async (req, res) => {
             user: {
                 id: user.id,
                 username: user.username,
+                hotspot_pin: user.hotspot_pin,
                 package: user.packages,
                 expiry_time: user.expiry_time
             }
@@ -258,7 +277,7 @@ const deleteUser = async (req, res) => {
     }
 
     // Disable + disconnect the matching hotspot user on the router
-    // (non-fatal if the router is unreachable).
+    // (non-fatal if the router is unreachable; the poll sync also handles removal).
     if (user && user.username) {
         try {
             await mikrotik.disableUser(user.username);
@@ -311,6 +330,9 @@ const renewPackage = async (req, res) => {
             });
         }
 
+        // Ensure the user has a hotspot PIN (older accounts may not)
+        const hotspotPin = user.hotspot_pin || generatePin();
+
         // Smart expiry logic
         const baseTime =
             new Date(user.expiry_time) > new Date()
@@ -325,6 +347,7 @@ const renewPackage = async (req, res) => {
             .from('users')
             .update({
                 package_id,
+                hotspot_pin: hotspotPin,
                 expiry_time: newExpiry,
                 status: 'ACTIVE'
             })
@@ -347,10 +370,8 @@ const renewPackage = async (req, res) => {
                 status: 'PAID'
             }]);
 
-        // Payment confirmed -> reactivate hotspot access on the router.
-        // The hotspot user was created at registration (we don't have the
-        // plaintext password here, only the stored hash), so we re-enable it.
-        // Non-fatal if the router is unreachable.
+        // LAB CONVENIENCE: re-enable on the router immediately. In production the
+        // poll sync re-activates the user. Non-fatal if the router is unreachable.
         try {
             await mikrotik.enableUser(user.username);
         } catch (mtError) {
@@ -360,6 +381,7 @@ const renewPackage = async (req, res) => {
         res.json({
             message: 'Package renewed successfully',
             new_expiry_time: newExpiry,
+            hotspot_pin: hotspotPin,
             user: updatedUser
         });
 
