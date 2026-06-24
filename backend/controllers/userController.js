@@ -55,9 +55,8 @@ const createUser = async (req, res) => {
         // Generate the hotspot PIN (voucher) the customer uses at the portal
         const hotspotPin = generatePin();
 
-        // Calculate expiry
-        const expiryTime = new Date();
-        expiryTime.setHours(expiryTime.getHours() + packageData.duration_hours);
+        // Calculate expiry (minute-level math so fractional-hour packages like 45min work)
+        const expiryTime = new Date(Date.now() + packageData.duration_minutes * 60 * 1000);
 
         // Insert user
         const { data, error } = await supabase
@@ -339,8 +338,7 @@ const renewPackage = async (req, res) => {
                 ? new Date(user.expiry_time)
                 : new Date();
 
-        const newExpiry = new Date(baseTime);
-        newExpiry.setHours(newExpiry.getHours() + pkg.duration_hours);
+        const newExpiry = new Date(baseTime.getTime() + pkg.duration_minutes * 60 * 1000);
 
         // Update user
         const { data: updatedUser, error: updateError } = await supabase
