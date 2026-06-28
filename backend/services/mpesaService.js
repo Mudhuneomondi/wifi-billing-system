@@ -13,19 +13,35 @@ async function getToken() {
     const now = Date.now();
     if (cachedToken && now < tokenExpiry) return cachedToken;
 
+    // TEMP DEBUG: confirm the consumer key/secret are even present before
+    // we build the auth header (a missing env var silently becomes the
+    // string "undefined" otherwise, which is a classic source of a 400
+    // with no helpful body).
+    console.log('getToken - MPESA_CONSUMER_KEY present:', !!process.env.MPESA_CONSUMER_KEY);
+    console.log('getToken - MPESA_CONSUMER_SECRET present:', !!process.env.MPESA_CONSUMER_SECRET);
+    console.log('getToken - MPESA_CONSUMER_KEY length:', (process.env.MPESA_CONSUMER_KEY || '').length);
+    console.log('getToken - BASE url:', BASE);
+
     const auth = Buffer
         .from(`${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`)
         .toString('base64');
 
-    const { data } = await axios.get(
-        `${BASE}/oauth/v1/generate?grant_type=client_credentials`,
-        { headers: { Authorization: `Basic ${auth}` } }
-    );
+    try {
+        const { data } = await axios.get(
+            `${BASE}/oauth/v1/generate?grant_type=client_credentials`,
+            { headers: { Authorization: `Basic ${auth}` } }
+        );
 
-    cachedToken = data.access_token;
-    // refresh 60s before the stated expiry
-    tokenExpiry = now + ((Number(data.expires_in) || 3600) - 60) * 1000;
-    return cachedToken;
+        cachedToken = data.access_token;
+        // refresh 60s before the stated expiry
+        tokenExpiry = now + ((Number(data.expires_in) || 3600) - 60) * 1000;
+        return cachedToken;
+    } catch (err) {
+        console.error('getToken axios error - status:', err.response?.status);
+        console.error('getToken axios error - data:', JSON.stringify(err.response?.data));
+        console.error('getToken axios error - headers:', JSON.stringify(err.response?.headers));
+        throw err;
+    }
 }
 
 // Normalise phone to 2547XXXXXXXX / 2541XXXXXXXX
