@@ -182,7 +182,11 @@ const createPhonePurchase = async (req, res) => {
         });
 
     } catch (err) {
-        console.error('createPhonePurchase error:', err.response?.data || err.message);
+        // TEMP DEBUG: log everything axios gives us so we can see Daraja's
+        // real rejection reason instead of just "status code 400".
+        console.error('createPhonePurchase error - status:', err.response?.status);
+        console.error('createPhonePurchase error - data:', JSON.stringify(err.response?.data));
+        console.error('createPhonePurchase error - message:', err.message);
         res.status(500).json({
             message: 'Server error',
             error: err.response?.data || err.message

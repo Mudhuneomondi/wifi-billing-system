@@ -75,13 +75,22 @@ async function stkPush({ phone, amount, accountRef, description }) {
         TransactionDesc: (description || 'WiFi package').slice(0, 20),
     };
 
-    const { data } = await axios.post(
-        `${BASE}/mpesa/stkpush/v1/processrequest`,
-        payload,
-        { headers: { Authorization: `Bearer ${token}` } }
-    );
+    // TEMP DEBUG: log the exact payload being sent (no secrets beyond what
+    // Daraja itself requires) so a 400 can be diagnosed from the Render logs.
+    console.log('stkPush payload:', JSON.stringify({ ...payload, Password: '(hidden)' }));
 
-    return data;
+    try {
+        const { data } = await axios.post(
+            `${BASE}/mpesa/stkpush/v1/processrequest`,
+            payload,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        return data;
+    } catch (err) {
+        console.error('stkPush axios error - status:', err.response?.status);
+        console.error('stkPush axios error - data:', JSON.stringify(err.response?.data));
+        throw err;
+    }
 }
 
 module.exports = { getToken, stkPush, formatPhone };
