@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-console.log("REV CTRL:", require('../controllers/revenueController'));
+
 const {
     getTotalRevenue,
     getTodayRevenue,
@@ -8,13 +8,16 @@ const {
     getTopPackages
 } = require('../controllers/revenueController');
 
-const verifyToken = require('../middleware/authMiddleware');
+const { verifyAdmin } = require('../middleware/authMiddleware');
 
-
-// Admin analytics endpoints
-router.get('/total', verifyToken, getTotalRevenue);
-router.get('/today', verifyToken, getTodayRevenue);
-router.get('/month', verifyToken, getMonthlyRevenue);
-router.get('/top-packages', verifyToken, getTopPackages);
+// Admin analytics endpoints -- previously used plain verifyToken, which
+// only checks that a token is valid, not that it belongs to an admin.
+// A logged-in WiFi customer's token would have passed that check and
+// been able to view total/today/monthly revenue. verifyAdmin requires
+// the role: 'admin' claim instead.
+router.get('/total', verifyAdmin, getTotalRevenue);
+router.get('/today', verifyAdmin, getTodayRevenue);
+router.get('/month', verifyAdmin, getMonthlyRevenue);
+router.get('/top-packages', verifyAdmin, getTopPackages);
 
 module.exports = router;
