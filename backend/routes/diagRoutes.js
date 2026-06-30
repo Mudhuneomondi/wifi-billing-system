@@ -1,122 +1,49 @@
+// TEMPORARY DIAGNOSTIC ROUTE -- delete this file (and its require line in
+// server.js) once the Imperva/IP investigation is finished.
+//
+// Purpose: Render's free tier has no Shell access, so we can't run curl
+// directly inside the container. This route does the rawest possible
+// version of the same OAuth request -- Node's built-in https module, no
+// axios, no proxy agent, no extra headers -- so we can see exactly what
+// Render's network produces, with zero code-layer interference.
+//
+// GET /api/diag/daraja  (no auth -- temporary, remove after use)
+
 const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-require('dotenv').config();
+const router = express.Router();
+const https = require('https');
 
-// Routes
-const packageRoutes = require('./routes/packageRoutes');
-const userRoutes = require('./routes/userRoutes');
-const sessionRoutes = require('./routes/sessionRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
-const revenueRoutes = require('./routes/revenueRoutes');
-const captiveRoutes = require('./routes/captiveRoutes');
-const routerRoutes = require('./routes/routerRoutes');   // polling sync for the RB941
-const mpesaRoutes = require('./routes/mpesaRoutes');      // M-Pesa STK push + callback
-const diagRoutes = require('./routes/diagRoutes');         // TEMPORARY -- remove after Imperva investigation
+router.get('/daraja', (req, res) => {
+    const auth = Buffer
+        .from(`${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`)
+        .toString('base64');
 
-// Services
-const { expireSessions } = require('./services/sessionService');
-const { runExpiryEngine } = require('./services/ispEngine');
+    const options = {
+        hostname: 'sandbox.safaricom.co.ke',
+        path: '/oauth/v1/generate?grant_type=client_credentials',
+        method: 'GET',
+        headers: {
+            Authorization: `Basic ${auth}`,
+        },
+    };
 
-const app = express();
-const server = http.createServer(app);
-
-// =====================================
-// SOCKET.IO SETUP
-// =====================================
-const io = new Server(server, {
-    cors: {
-        origin: "*"
-    }
-});
-
-app.use(express.json());
-
-
-// =====================================
-// HOME
-// =====================================
-app.get('/', (req, res) => {
-    res.send('WiFi Billing System API Running');
-});
-
-
-// =====================================
-// ROUTES
-// =====================================
-app.use('/api/packages', packageRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/sessions', sessionRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/revenue', revenueRoutes);
-app.use('/api/captive', captiveRoutes);
-app.use('/api/router', routerRoutes);    // RB941 polls /api/router/sync
-app.use('/api/mpesa', mpesaRoutes);      // /api/mpesa/stk  and  /api/mpesa/callback
-app.use('/api/diag', diagRoutes);        // TEMPORARY -- remove after Imperva investigation
-
-
-// =====================================
-// REAL-TIME CONNECTIONS
-// =====================================
-io.on('connection', (socket) => {
-
-    console.log('Admin connected:', socket.id);
-
-    socket.on('disconnect', () => {
-        console.log('Admin disconnected:', socket.id);
-    });
-});
-
-
-// =====================================
-// EMIT LIVE STATS FUNCTION
-// =====================================
-const emitStats = async () => {
-
-    try {
-
-        const supabase = require('./config/supabase');
-
-        const { count: activeUsers } = await supabase
-            .from('users')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'ACTIVE');
-
-        const { count: activeSessions } = await supabase
-            .from('sessions')
-            .select('*', { count: 'exact', head: true })
-            .eq('status', 'ACTIVE');
-
-        io.emit('liveStats', {
-            activeUsers,
-            activeSessions,
-            timestamp: new Date()
+    const req2 = https.request(options, (darajaRes) => {
+        let body = '';
+        darajaRes.on('data', (chunk) => { body += chunk; });
+        darajaRes.on('end', () => {
+            res.json({
+                status: darajaRes.statusCode,
+                headers: darajaRes.headers,
+                body: body || '(empty body)',
+            });
         });
+    });
 
-    } catch (err) {
-        console.error('Live stats error:', err.message);
-    }
-};
+    req2.on('error', (err) => {
+        res.status(500).json({ error: err.message });
+    });
 
-
-// =====================================
-// ENGINE LOOPS
-// =====================================
-setInterval(async () => {
-    await expireSessions();
-    await runExpiryEngine();
-    await emitStats();
-}, 5000); // every 5 seconds (REAL-TIME FEEL)
-
-
-// =====================================
-// START SERVER
-// =====================================
-const PORT = process.env.PORT || 5000;
-
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log('Real-time ISP engine active...');
+    req2.end();
 });
+
+module.exports = router;
