@@ -13,7 +13,7 @@ const revenueRoutes = require('./routes/revenueRoutes');
 const captiveRoutes = require('./routes/captiveRoutes');
 const routerRoutes = require('./routes/routerRoutes');   // polling sync for the RB941
 const mpesaRoutes = require('./routes/mpesaRoutes');      // M-Pesa STK push + callback
-const diagRoutes = require('./routes/diagRoutes');         // TEMPORARY -- remove after Imperva investigation
+const diagRoutes = require('./routes/diagRoutes');         // TEMPORARY -- remove after Webshare IP whitelist setup
 
 // Services
 const { expireSessions } = require('./services/sessionService');
@@ -54,7 +54,7 @@ app.use('/api/revenue', revenueRoutes);
 app.use('/api/captive', captiveRoutes);
 app.use('/api/router', routerRoutes);    // RB941 polls /api/router/sync
 app.use('/api/mpesa', mpesaRoutes);      // /api/mpesa/stk  and  /api/mpesa/callback
-app.use('/api/diag', diagRoutes);        // TEMPORARY -- remove after Imperva investigation
+app.use('/api/diag', diagRoutes);        // TEMPORARY -- remove after Webshare IP whitelist setup
 
 
 // =====================================

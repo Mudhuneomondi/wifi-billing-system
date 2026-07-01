@@ -1,5 +1,6 @@
 const axios = require('axios');
 const https = require('https');
+const crypto = require('crypto');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // Sandbox for testing, production once Safaricom approves your live app.
@@ -17,12 +18,22 @@ const defaultAgent = new https.Agent({
     keepAlive: true,
 });
 
+// Imperva's edge (in front of Daraja) issues a mid-handshake TLS
+// renegotiation request. curl/schannel handles this transparently, but
+// Node's OpenSSL rejects renegotiation by default for security reasons,
+// which surfaces as "Client network socket disconnected before secure TLS
+// connection was established" when going through a proxy. This flag
+// explicitly allows legacy renegotiation so the handshake can complete --
+// safe here because we're deliberately connecting to a known Safaricom
+// hostname, not arbitrary user-supplied servers.
+const secureOptions = crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
+
 // If QUOTAGUARDSTATIC_URL is set (Render env var), route Daraja calls through
-// it so they come from QuotaGuard's static IP instead of Render's shared
+// it so they come from a residential/static IP instead of Render's shared
 // pool. Otherwise fall back to the plain IPv4-forced agent above. Locally
 // (no env var set) this still applies the IPv4 fix, just with no proxy.
 const proxyAgent = process.env.QUOTAGUARDSTATIC_URL
-    ? new HttpsProxyAgent(process.env.QUOTAGUARDSTATIC_URL)
+    ? new HttpsProxyAgent(process.env.QUOTAGUARDSTATIC_URL, { secureOptions })
     : defaultAgent;
 
 const axiosOpts = {
