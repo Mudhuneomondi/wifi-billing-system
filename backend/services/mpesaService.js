@@ -57,15 +57,22 @@ async function getToken() {
         .from(`${process.env.MPESA_CONSUMER_KEY}:${process.env.MPESA_CONSUMER_SECRET}`)
         .toString('base64');
 
-    const { data } = await axios.get(
-        `${BASE}/oauth/v1/generate?grant_type=client_credentials`,
-        { ...axiosOpts, headers: { ...axiosOpts.headers, Authorization: `Basic ${auth}` } }
-    );
+    try {
+        const { data } = await axios.get(
+            `${BASE}/oauth/v1/generate?grant_type=client_credentials`,
+            { ...axiosOpts, headers: { ...axiosOpts.headers, Authorization: `Basic ${auth}` } }
+        );
 
-    cachedToken = data.access_token;
-    // refresh 60s before the stated expiry
-    tokenExpiry = now + ((Number(data.expires_in) || 3600) - 60) * 1000;
-    return cachedToken;
+        cachedToken = data.access_token;
+        // refresh 60s before the stated expiry
+        tokenExpiry = now + ((Number(data.expires_in) || 3600) - 60) * 1000;
+        return cachedToken;
+    } catch (err) {
+        console.error('getToken axios error - status:', err.response?.status);
+        console.error('getToken axios error - data:', JSON.stringify(err.response?.data));
+        console.error('getToken axios error - message:', err.message);
+        throw err;
+    }
 }
 
 // Normalise phone to 2547XXXXXXXX / 2541XXXXXXXX
