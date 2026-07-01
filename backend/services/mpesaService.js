@@ -45,7 +45,18 @@ const axiosOpts = {
     // Force HTTP/1.1 explicitly (axios/Node default to 1.1 already in most
     // setups, but some WAFs behave differently under HTTP/2 -- this removes
     // any ambiguity).
-    headers: { Connection: 'keep-alive' },
+    //
+    // User-Agent / Accept: axios's default headers differ from a real
+    // browser/curl request (Node often sends no User-Agent at all, or a
+    // generic "axios/x.x.x" string). The successful manual curl test that
+    // got a real 200 through this same proxy used curl's own defaults
+    // (User-Agent: curl/x.x.x, Accept: */*) -- mirroring those here in case
+    // Imperva's bot detection also weighs header shape, not just IP class.
+    headers: {
+        Connection: 'keep-alive',
+        'User-Agent': 'curl/8.19.0',
+        Accept: '*/*',
+    },
 };
 
 // ---- Token cache (Daraja tokens last ~1 hour; don't fetch one per request) ----
