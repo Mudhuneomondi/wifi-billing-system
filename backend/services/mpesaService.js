@@ -1,63 +1,65 @@
-const axios = require('axios');
-const https = require('https');
+// mpesaService.js -- Daraja (M-Pesa) integration.
+//
+// Uses got-scraping instead of axios for the actual HTTP calls. Reason:
+// Safaricom sandbox sits behind Imperva, which blocks requests from
+// cloud/datacenter IPs at the network level (confirmed via extensive
+// testing -- same empty-400 signature from Render AND a separate Oracle
+// Cloud VM). Routing through a residential proxy fixed this for raw curl
+// requests, but axios/Node's native TLS stack still got blocked even
+// through the same working proxy -- most likely due to TLS ClientHello
+// fingerprinting (JA3), which Imperva-class WAFs are known to use.
+// got-scraping mimics a real browser's TLS fingerprint instead of
+// Node's default OpenSSL one, which is the actual fix for that layer.
+
 const crypto = require('crypto');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+
+// got-scraping is ESM-only; this project is CommonJS, so we load it via
+// a cached dynamic import rather than converting the whole app to ESM.
+let gotScrapingPromise = null;
+function loadGotScraping() {
+    if (!gotScrapingPromise) {
+        gotScrapingPromise = import('got-scraping').then((m) => m.gotScraping);
+    }
+    return gotScrapingPromise;
+}
 
 // Sandbox for testing, production once Safaricom approves your live app.
 const BASE = process.env.MPESA_ENV === 'production'
     ? 'https://api.safaricom.co.ke'
     : 'https://sandbox.safaricom.co.ke';
 
-// DIAGNOSTIC: force IPv4 + HTTP/1.1 on every Daraja request. This is part
-// of isolating whether Imperva's block is IP/protocol related. Has no
-// effect on credentials or payload -- purely a transport-level change.
-// Safe to leave in permanently; it doesn't hurt anything if this turns out
-// not to be the cause.
-const defaultAgent = new https.Agent({
-    family: 4,        // force IPv4, never IPv6
-    keepAlive: true,
-});
+// If QUOTAGUARDSTATIC_URL is set (Render env var), route Daraja calls
+// through it -- currently a Webshare residential-proxy URL, in the same
+// format http://user:pass@host:port. Left undefined for local dev.
+const PROXY_URL = process.env.QUOTAGUARDSTATIC_URL || undefined;
 
-// Imperva's edge (in front of Daraja) issues a mid-handshake TLS
-// renegotiation request. The successful curl test through this same proxy
-// showed the connection negotiating TLS 1.2 (renegotiation is a TLS 1.2
-// concept -- it doesn't exist in TLS 1.3). Node/axios may default to
-// offering TLS 1.3 first, which changes the handshake shape entirely and
-// can cause the proxy tunnel to disconnect before completing. Forcing
-// TLS 1.2 here matches the exact negotiation path that already works.
-const secureOptions = crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
-const tlsVersionOpts = {
-    minVersion: 'TLSv1.2',
-    maxVersion: 'TLSv1.2',
-};
+// Small helper: makes a GET/POST via got-scraping and normalizes the
+// result into either a parsed JSON body (success) or a thrown Error with
+// .status and .data attached (failure) -- so calling code can handle
+// errors the same way regardless of got-scraping's own throw behavior.
+async function request({ method, url, headers, json }) {
+    const gotScraping = await loadGotScraping();
 
-// If QUOTAGUARDSTATIC_URL is set (Render env var), route Daraja calls through
-// it so they come from a residential/static IP instead of Render's shared
-// pool. Otherwise fall back to the plain IPv4-forced agent above. Locally
-// (no env var set) this still applies the IPv4 fix, just with no proxy.
-const proxyAgent = process.env.QUOTAGUARDSTATIC_URL
-    ? new HttpsProxyAgent(process.env.QUOTAGUARDSTATIC_URL, { secureOptions, ...tlsVersionOpts })
-    : defaultAgent;
+    const res = await gotScraping({
+        url,
+        method,
+        headers,
+        json,
+        proxyUrl: PROXY_URL,
+        responseType: 'json',
+        throwHttpErrors: false,
+        timeout: { request: 20000 },
+    });
 
-const axiosOpts = {
-    httpsAgent: proxyAgent,
-    proxy: false,
-    // Force HTTP/1.1 explicitly (axios/Node default to 1.1 already in most
-    // setups, but some WAFs behave differently under HTTP/2 -- this removes
-    // any ambiguity).
-    //
-    // User-Agent / Accept: axios's default headers differ from a real
-    // browser/curl request (Node often sends no User-Agent at all, or a
-    // generic "axios/x.x.x" string). The successful manual curl test that
-    // got a real 200 through this same proxy used curl's own defaults
-    // (User-Agent: curl/x.x.x, Accept: */*) -- mirroring those here in case
-    // Imperva's bot detection also weighs header shape, not just IP class.
-    headers: {
-        Connection: 'keep-alive',
-        'User-Agent': 'curl/8.19.0',
-        Accept: '*/*',
-    },
-};
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+        const err = new Error(`Request failed with status code ${res.statusCode}`);
+        err.status = res.statusCode;
+        err.data = res.body;
+        throw err;
+    }
+
+    return res.body;
+}
 
 // ---- Token cache (Daraja tokens last ~1 hour; don't fetch one per request) ----
 let cachedToken = null;
@@ -72,19 +74,20 @@ async function getToken() {
         .toString('base64');
 
     try {
-        const { data } = await axios.get(
-            `${BASE}/oauth/v1/generate?grant_type=client_credentials`,
-            { ...axiosOpts, headers: { ...axiosOpts.headers, Authorization: `Basic ${auth}` } }
-        );
+        const data = await request({
+            method: 'GET',
+            url: `${BASE}/oauth/v1/generate?grant_type=client_credentials`,
+            headers: { Authorization: `Basic ${auth}` },
+        });
 
         cachedToken = data.access_token;
         // refresh 60s before the stated expiry
         tokenExpiry = now + ((Number(data.expires_in) || 3600) - 60) * 1000;
         return cachedToken;
     } catch (err) {
-        console.error('getToken axios error - status:', err.response?.status);
-        console.error('getToken axios error - data:', JSON.stringify(err.response?.data));
-        console.error('getToken axios error - message:', err.message);
+        console.error('getToken error - status:', err.status);
+        console.error('getToken error - data:', JSON.stringify(err.data));
+        console.error('getToken error - message:', err.message);
         throw err;
     }
 }
@@ -137,17 +140,18 @@ async function stkPush({ phone, amount, accountRef, description }) {
     };
 
     try {
-        const { data } = await axios.post(
-            `${BASE}/mpesa/stkpush/v1/processrequest`,
-            payload,
-            { ...axiosOpts, headers: { ...axiosOpts.headers, Authorization: `Bearer ${token}` } }
-        );
+        const data = await request({
+            method: 'POST',
+            url: `${BASE}/mpesa/stkpush/v1/processrequest`,
+            headers: { Authorization: `Bearer ${token}` },
+            json: payload,
+        });
         return data;
     } catch (err) {
-        console.error('stkPush axios error - status:', err.response?.status);
-        console.error('stkPush axios error - data:', JSON.stringify(err.response?.data));
+        console.error('stkPush error - status:', err.status);
+        console.error('stkPush error - data:', JSON.stringify(err.data));
         throw err;
     }
 }
 
-module.exports = { getToken, stkPush, formatPhone, proxyAgent, axiosOpts };
+module.exports = { getToken, stkPush, formatPhone };
