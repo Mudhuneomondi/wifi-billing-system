@@ -19,21 +19,24 @@ const defaultAgent = new https.Agent({
 });
 
 // Imperva's edge (in front of Daraja) issues a mid-handshake TLS
-// renegotiation request. curl/schannel handles this transparently, but
-// Node's OpenSSL rejects renegotiation by default for security reasons,
-// which surfaces as "Client network socket disconnected before secure TLS
-// connection was established" when going through a proxy. This flag
-// explicitly allows legacy renegotiation so the handshake can complete --
-// safe here because we're deliberately connecting to a known Safaricom
-// hostname, not arbitrary user-supplied servers.
+// renegotiation request. The successful curl test through this same proxy
+// showed the connection negotiating TLS 1.2 (renegotiation is a TLS 1.2
+// concept -- it doesn't exist in TLS 1.3). Node/axios may default to
+// offering TLS 1.3 first, which changes the handshake shape entirely and
+// can cause the proxy tunnel to disconnect before completing. Forcing
+// TLS 1.2 here matches the exact negotiation path that already works.
 const secureOptions = crypto.constants.SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
+const tlsVersionOpts = {
+    minVersion: 'TLSv1.2',
+    maxVersion: 'TLSv1.2',
+};
 
 // If QUOTAGUARDSTATIC_URL is set (Render env var), route Daraja calls through
 // it so they come from a residential/static IP instead of Render's shared
 // pool. Otherwise fall back to the plain IPv4-forced agent above. Locally
 // (no env var set) this still applies the IPv4 fix, just with no proxy.
 const proxyAgent = process.env.QUOTAGUARDSTATIC_URL
-    ? new HttpsProxyAgent(process.env.QUOTAGUARDSTATIC_URL, { secureOptions })
+    ? new HttpsProxyAgent(process.env.QUOTAGUARDSTATIC_URL, { secureOptions, ...tlsVersionOpts })
     : defaultAgent;
 
 const axiosOpts = {
