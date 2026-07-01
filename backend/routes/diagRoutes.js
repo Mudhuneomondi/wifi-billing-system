@@ -9,6 +9,8 @@
 const express = require('express');
 const router = express.Router();
 const https = require('https');
+const axios = require('axios');
+const { axiosOpts } = require('../services/mpesaService');
 
 router.get('/myip', (req, res) => {
     https.get('https://api.ipify.org?format=json', (ipRes) => {
@@ -20,6 +22,28 @@ router.get('/myip', (req, res) => {
     }).on('error', (err) => {
         res.status(500).json({ error: err.message });
     });
+});
+
+// GET /api/diag/proxy-check
+// Verifies the proxy is genuinely being used for outbound Daraja-style
+// requests. Uses the EXACT same axiosOpts (httpsAgent, headers) that
+// mpesaService.js uses for real Daraja calls -- so if this shows Render's
+// raw IP instead of the residential proxy's IP, we know https-proxy-agent
+// is silently bypassing the tunnel for the real requests too.
+router.get('/proxy-check', async (req, res) => {
+    try {
+        const { data } = await axios.get('https://api.ipify.org?format=json', axiosOpts);
+        res.json({
+            seenAsIp: data,
+            usingProxy: !!process.env.QUOTAGUARDSTATIC_URL,
+        });
+    } catch (err) {
+        res.status(500).json({
+            error: err.message,
+            status: err.response?.status,
+            data: err.response?.data,
+        });
+    }
 });
 
 module.exports = router;

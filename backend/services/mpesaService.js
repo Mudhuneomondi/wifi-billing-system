@@ -150,4 +150,4 @@ async function stkPush({ phone, amount, accountRef, description }) {
     }
 }
 
-module.exports = { getToken, stkPush, formatPhone };
+module.exports = { getToken, stkPush, formatPhone, proxyAgent, axiosOpts };
